@@ -9,32 +9,50 @@ from nd2reader import ND2Reader
 from PIL import Image
 import tifffile
 import os
+import tempfile
 
 def process_image_file(file, folder_name=""):
     """
-    Process a single image file (ND2, TIFF, JPG, JP2) and calculate scratch area
-    Returns a list of dicts with results
+    Process a single uploaded image file (ND2, TIFF, JPG, JP2) and calculate scratch area.
+    Works with Streamlit's uploaded BytesIO files.
+    Returns a list of dicts with results.
     """
     results = []
 
     try:
-        ext = os.path.splitext(file.name if hasattr(file, 'name') else str(file))[1].lower()
+        # Get filename safely
+        filename = getattr(file, "name", "uploaded_file")
+        ext = os.path.splitext(filename)[1].lower()
+
+        # Save to a temporary file if needed
+        temp_path = None
+        if isinstance(file, BytesIO):
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+            temp_file.write(file.getbuffer())
+            temp_file.close()
+            temp_path = temp_file.name
+        else:
+            temp_path = filename
+
         frames = []
 
         if ext == ".nd2":
-            with ND2Reader(file) as images:
+            with ND2Reader(temp_path) as images:
                 frames = [np.asarray(frame) for frame in images]
         elif ext in [".tif", ".tiff"]:
-            img = tifffile.imread(file)
+            img = tifffile.imread(temp_path)
             frames = [img[i] for i in range(img.shape[0])] if img.ndim == 3 else [img]
         elif ext in [".jpg", ".jpeg", ".png", ".jp2"]:
-            img = Image.open(file)
+            img = Image.open(temp_path)
             frames = [np.array(img)]
         else:
-            return [{"File": file.name if hasattr(file, 'name') else str(file),
-                     "Error": f"Unsupported image type: {ext}"}]
+            results.append({
+                "File": filename,
+                "Error": f"Unsupported image type: {ext}"
+            })
+            return results
 
-        from skimage.color import rgb2gray  # Import here to avoid unused import warnings
+        from skimage.color import rgb2gray
 
         for idx, img in enumerate(frames):
             h, w = img.shape[:2]
@@ -43,7 +61,6 @@ def process_image_file(file, folder_name=""):
             if img.ndim == 3 and img.shape[2] in [3, 4]:
                 img = rgb2gray(img)
 
-            # Ensure image is uint8 for entropy calculation
             img_uint8 = (img * 255).astype(np.uint8) if img.dtype != np.uint8 else img
 
             ent_img = entropy(img_uint8, disk(5))
@@ -53,52 +70,20 @@ def process_image_file(file, folder_name=""):
             scratch_percentage = scratch_area_pix * 100.0 / (h * w)
 
             results.append({
-                "File": f"{folder_name}_{file.name if hasattr(file, 'name') else os.path.basename(file)}",
+                "File": f"{folder_name}_{filename}",
                 "Frame": idx + 1,
                 "Scratch Area (pix²)": scratch_area_pix,
                 "Percentage": scratch_percentage
             })
 
+        # Delete temp file
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
     except Exception as e:
         results.append({
-            "File": file.name if hasattr(file, 'name') else str(file),
+            "File": getattr(file, "name", str(file)),
             "Error": str(e)
         })
 
     return results
-
-
-def run_analysis(uploaded_files):
-    """
-    Main function for Streamlit integration.
-    uploaded_files: list of uploaded files (file-like objects)
-    Returns: results_df, excel_bytes, chart_fig
-    """
-    if not uploaded_files:
-        return pd.DataFrame(), None, None
-
-    all_results = []
-    for f in uploaded_files:
-        all_results.extend(process_image_file(f))
-
-    # Convert results to DataFrame
-    results_df = pd.DataFrame(all_results)
-
-    # Prepare Excel
-    excel_buffer = BytesIO()
-    results_df.to_excel(excel_buffer, index=False)
-    excel_bytes = excel_buffer.getvalue()
-
-    # Generate chart: Scratch area per frame
-    chart_fig = None
-    if not results_df.empty and "Scratch Area (pix²)" in results_df.columns:
-        chart_fig = plt.figure(figsize=(10, 5))
-        for file_name, group in results_df.groupby("File"):
-            plt.plot(group["Frame"], group["Scratch Area (pix²)"], marker='o', label=file_name)
-        plt.title("Scratch Area per Frame")
-        plt.xlabel("Frame")
-        plt.ylabel("Scratch Area (pix²)")
-        plt.legend()
-        plt.tight_layout()
-
-    return results_df, excel_bytes, chart_fig
