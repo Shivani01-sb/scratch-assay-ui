@@ -1,12 +1,10 @@
+
 import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 import os
 import glob
 import numpy as np
-import tempfile
-import zipfile
-import rarfile
 from skimage.filters.rank import entropy
 from skimage.morphology import disk
 from skimage.filters import threshold_otsu
@@ -55,26 +53,6 @@ def process_nd2_file(file_path, index_start=1, folder_name=""):
     return area_list
 
 
-def extract_archive(file, tmpdir):
-    """Extract ZIP or RAR file to a temp directory and return list of file paths."""
-    extracted_files = []
-    file_path = os.path.join(tmpdir, file.name)
-    with open(file_path, "wb") as f_out:
-        f_out.write(file.getbuffer())
-
-    if file.name.lower().endswith(".zip"):
-        with zipfile.ZipFile(file_path, 'r') as zip_ref:
-            zip_ref.extractall(tmpdir)
-    elif file.name.lower().endswith(".rar"):
-        with rarfile.RarFile(file_path, 'r') as rar_ref:
-            rar_ref.extractall(tmpdir)
-
-    for root, _, files in os.walk(tmpdir):
-        for fname in files:
-            extracted_files.append(os.path.join(root, fname))
-    return extracted_files
-
-
 def run_analysis(input_path=None, uploaded_files=None):
     """
     Process uploaded files or a local folder.
@@ -82,22 +60,12 @@ def run_analysis(input_path=None, uploaded_files=None):
     """
     all_results = []
 
+    # Cloud / Web usage: uploaded_files provided
     if uploaded_files:
         index_counter = 1
-        tmpdir = tempfile.mkdtemp()
-
         for f in uploaded_files:
-            # Handle archives
-            if f.name.lower().endswith((".zip", ".rar")):
-                extracted_paths = extract_archive(f, tmpdir)
-                for p in extracted_paths:
-                    if p.lower().endswith(".nd2"):
-                        results = process_nd2_file(p, index_start=index_counter)
-                        all_results.extend(results)
-                        index_counter += 1
-
             # Handle CSV
-            elif f.name.lower().endswith('.csv'):
+            if f.name.lower().endswith('.csv'):
                 df = pd.read_csv(f)
                 excel_bytes = _to_excel_bytes(df)
                 return df, excel_bytes, None
@@ -108,9 +76,10 @@ def run_analysis(input_path=None, uploaded_files=None):
                 excel_bytes = _to_excel_bytes(df)
                 return df, excel_bytes, None
 
-            # Handle ND2 directly
+            # Handle ND2
             elif f.name.lower().endswith('.nd2'):
-                tmp_path = os.path.join(tmpdir, f.name)
+                # Save temp file for processing
+                tmp_path = os.path.join("/tmp", f.name)
                 with open(tmp_path, "wb") as tmp_f:
                     tmp_f.write(f.getbuffer())
                 results = process_nd2_file(tmp_path, index_start=index_counter)
@@ -127,6 +96,7 @@ def run_analysis(input_path=None, uploaded_files=None):
 
         raise ValueError("No valid files found.")
 
+    # Local usage: input_path provided
     elif input_path:
         index_counter = 1
         for file_path in glob.glob(os.path.join(input_path, "*.nd2")):
