@@ -26,10 +26,6 @@ def verify_password(username, password, config):
 # ---------- Initialize session state ----------
 if "auth" not in st.session_state:
     st.session_state["auth"] = {"is_authenticated": False, "username": ""}
-if "login_attempt" not in st.session_state:
-    st.session_state["login_attempt"] = False
-if "logout_attempt" not in st.session_state:
-    st.session_state["logout_attempt"] = False
 
 # ---------- App ----------
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
@@ -39,18 +35,14 @@ config = load_config()
 
 # ---------- Sidebar: Login ----------
 st.sidebar.subheader("Authentication")
-
 if not st.session_state["auth"]["is_authenticated"]:
     username = st.sidebar.text_input("Username")
     password = st.sidebar.text_input("Password", type="password")
     if st.sidebar.button("Sign in"):
-        st.session_state["login_attempt"] = True
         if verify_password(username, password, config):
             st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            st.session_state["login_attempt"] = False
         else:
             st.sidebar.error("Invalid credentials")
-            st.session_state["login_attempt"] = False
     st.sidebar.caption("Use credentials from config.yaml")
 
 # ---------- Sidebar: Logout ----------
@@ -58,7 +50,6 @@ if st.session_state["auth"]["is_authenticated"]:
     st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
     if st.sidebar.button("Sign out"):
         st.session_state["auth"] = {"is_authenticated": False, "username": ""}
-        st.session_state["logout_attempt"] = True
 
 # ---------- Main App: After Login ----------
 if st.session_state["auth"]["is_authenticated"]:
@@ -87,7 +78,11 @@ if st.session_state["auth"]["is_authenticated"]:
             st.warning("Please upload at least one file before running analysis.")
         else:
             try:
-                results_df, excel_bytes, chart_fig = run_analysis(uploaded_files)
+                # Convert uploaded files to BytesIO for in-memory processing
+                uploaded_file_bytes = [BytesIO(f.getbuffer()) for f in uploaded_files]
+
+                # Run analysis
+                results_df, excel_bytes, chart_fig = run_analysis(uploaded_file_bytes)
 
                 # Display Results Table
                 if show_table and isinstance(results_df, pd.DataFrame):
