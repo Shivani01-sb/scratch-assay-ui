@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import yaml
 from io import BytesIO
-import matplotlib.pyplot as plt
 from scratch_analysis import run_analysis
 
 # ---------- Auth Helpers ----------
@@ -28,11 +27,12 @@ def login_ui(config):
     st.sidebar.subheader("Login")
     username = st.sidebar.text_input("Username")
     password = st.sidebar.text_input("Password", type="password")
-    if st.sidebar.button("Sign in"):
+    login_clicked = st.sidebar.button("Sign in")
+    if login_clicked:
         if verify_password(username, password, config):
             st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            st.success("Login successful. Please refresh the page to continue.")
-            st.stop()
+            st.success("Login successful! Refreshing...")
+            st.experimental_rerun()
         else:
             st.sidebar.error("Invalid credentials")
     st.sidebar.caption("Use credentials from config.yaml")
@@ -40,8 +40,9 @@ def login_ui(config):
 def logout_ui():
     if st.sidebar.button("Sign out"):
         st.session_state["auth"] = {"is_authenticated": False}
-        st.success("Logged out. Please refresh the page to continue.")
-        st.stop()
+        st.success("Logged out! Refreshing...")
+        st.experimental_rerun()
+
 
 # ---------- App ----------
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
@@ -51,6 +52,7 @@ config = load_config()
 if "auth" not in st.session_state:
     st.session_state["auth"] = {"is_authenticated": False}
 
+# ---------- Authentication ----------
 if not st.session_state["auth"]["is_authenticated"]:
     login_ui(config)
 else:
@@ -59,30 +61,31 @@ else:
 
     st.markdown("""
     **Upload your files:** You can drag & drop or click to select CSV, Excel, or ZIP files.
-    Your existing processing logic should live in `scratch_analysis.py::run_analysis`.
     """)
 
     # ---------- File Uploader ----------
-    uploaded = st.file_uploader(
+    uploaded_files = st.file_uploader(
         "Upload one or more files (CSV, XLSX, ZIP)",
         type=["csv", "xlsx", "zip"],
         accept_multiple_files=True,
-        help="Drag files here or click to browse"
+        help="Drag files here or click to browse",
+        key="uploader"
     )
 
-    # Optional parameters / switches
+    # ---------- Optional Parameters ----------
     with st.expander("Options"):
         show_chart = st.checkbox("Show chart", value=True)
         show_table = st.checkbox("Show result table", value=True)
 
     # ---------- Run Analysis ----------
-    if st.button("Run Analysis", type="primary"):
-        if not uploaded:
-            st.warning("Please upload at least one file.")
+    run_clicked = st.button("Run Analysis")
+    if run_clicked:
+        if not uploaded_files:
+            st.warning("Please upload at least one file before running analysis.")
             st.stop()
-
+        
         try:
-            results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=uploaded)
+            results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=uploaded_files)
 
             if show_table and isinstance(results_df, pd.DataFrame):
                 st.subheader("Results")
@@ -92,7 +95,7 @@ else:
                 st.subheader("Chart")
                 st.pyplot(chart_fig, clear_figure=False)
 
-            # Downloads
+            # ---------- Downloads ----------
             if isinstance(excel_bytes, (bytes, bytearray)):
                 st.download_button(
                     "Download Excel Results",
@@ -111,7 +114,8 @@ else:
                     mime="image/png",
                 )
 
-            st.success("Analysis completed.")
+            st.success("Analysis completed successfully!")
+
         except Exception as e:
             st.error(f"Error during analysis: {e}")
             st.exception(e)
