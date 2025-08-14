@@ -1,10 +1,8 @@
-
-# Replace these with your own values before deploying!
 auth:
-  salt: "change-me-please"  # change this to a long random string
+  salt: "48dbc1cae1b87b05a80868f3df9f868a"
   cookie_name: "scratch_assay_ui"
-  cookie_key: "change-this-cookie-key"  # change this
+  cookie_key: "53e1a8d3b9393b1f0186aeac310996da"
   users:
     - username: "admin"
-      # sha256(password + salt) => for password 'admin123' with the default salt above
-      password_sha256: "bce20f83f922318700d2df5186cf6359e7d89046a65b53bb480adb06138730c1"
+      password_sha256: "f5767a0cb8e642e4d86857f930b50ba27a71afb86dbfb25a09bfdf846407ccd6"
+
