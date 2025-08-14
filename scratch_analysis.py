@@ -19,96 +19,96 @@ def _to_excel_bytes(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-def process_images_in_folder(folder_path, folder_name=""):
-    """Process all .nd2 images in the given folder (recursively)."""
+def process_nd2_file(file_path, index_start=1, folder_name=""):
+    """Process a single ND2 file and return area results."""
     area_list = []
-    i = 1
+    try:
+        with ND2Reader(file_path) as images:
+            img = np.asarray(images[0])  # First image
 
-    for file in glob.glob(os.path.join(folder_path, '*.nd2')):
-        print("Processing file:", file)
-        try:
-            with ND2Reader(file) as images:
-                img = np.asarray(images[0])  # First image
-            
-            h, w = img.shape
-            entropy_filtered_image = entropy(img, disk(5))
-            threshold = threshold_otsu(entropy_filtered_image)
-            Scratch = entropy_filtered_image < threshold
+        h, w = img.shape
+        entropy_filtered_image = entropy(img, disk(5))
+        threshold = threshold_otsu(entropy_filtered_image)
+        Scratch = entropy_filtered_image < threshold
 
-            plt.subplot(3, 3, i)
-            i += 1
-            plt.imshow(Scratch, cmap='gray')
+        plt.subplot(3, 3, index_start)
+        plt.imshow(Scratch, cmap='gray')
 
-            area = np.sum(Scratch == 1) * 100.0 / (h * w)
-            binary = entropy_filtered_image <= threshold
-            scratch_area = np.sum(binary == 1)
-            print("Scratch area=", scratch_area, "pix²")
+        area = np.sum(Scratch == 1) * 100.0 / (h * w)
+        binary = entropy_filtered_image <= threshold
+        scratch_area = np.sum(binary == 1)
 
-            area_list.append({
-                'Sr. No.': i,
-                'Name': f"{folder_name}_{os.path.basename(file)}",
-                'Scratch Area': scratch_area,
-                'Percentage': area
-            })
+        area_list.append({
+            'Sr. No.': index_start,
+            'Name': f"{folder_name}_{os.path.basename(file_path)}",
+            'Scratch Area': scratch_area,
+            'Percentage': area
+        })
 
-        except Exception as e:
-            print("Error processing file:", file)
-            print("Error message:", str(e))
+    except Exception as e:
+        print("Error processing file:", file_path)
+        print("Error message:", str(e))
     
-    # Process subfolders recursively
-    for subfolder in os.listdir(folder_path):
-        subfolder_path = os.path.join(folder_path, subfolder)
-        if os.path.isdir(subfolder_path):
-            area_list.extend(process_images_in_folder(subfolder_path, f"{folder_name}_{subfolder}"))
-
     return area_list
 
 
 def run_analysis(input_path=None, uploaded_files=None):
     """
-    Main analysis entry point for both local and cloud usage.
-    
-    Args:
-        input_path: Optional path to local folder/file for offline use.
-        uploaded_files: Optional list of Streamlit UploadedFile objects for cloud use.
-    Returns:
-        results_df, excel_bytes, chart_fig
+    Process uploaded files or a local folder.
+    Returns: results_df, excel_bytes, chart_fig
     """
+    all_results = []
+
+    # Cloud / Web usage: uploaded_files provided
     if uploaded_files:
-        # Process uploaded files (Streamlit Cloud / Web)
-        file = uploaded_files[0]
-        
-        # CSV/Excel handling
-        if file.name.lower().endswith('.csv'):
-            df = pd.read_csv(file)
-            excel_bytes = _to_excel_bytes(df)
-            return df, excel_bytes, None
-        
-        elif file.name.lower().endswith(('.xls', '.xlsx')):
-            df = pd.read_excel(file)
-            excel_bytes = _to_excel_bytes(df)
-            return df, excel_bytes, None
-        
-        elif file.name.lower().endswith('.nd2'):
-            # Save the uploaded ND2 to a temp file
-            tmp_path = os.path.join("/tmp", file.name)
-            with open(tmp_path, "wb") as f:
-                f.write(file.getbuffer())
-            
-            area_list = process_images_in_folder(os.path.dirname(tmp_path))
-            results_df = pd.DataFrame(area_list)
+        index_counter = 1
+        for f in uploaded_files:
+            # Handle CSV
+            if f.name.lower().endswith('.csv'):
+                df = pd.read_csv(f)
+                excel_bytes = _to_excel_bytes(df)
+                return df, excel_bytes, None
+
+            # Handle Excel
+            elif f.name.lower().endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(f)
+                excel_bytes = _to_excel_bytes(df)
+                return df, excel_bytes, None
+
+            # Handle ND2
+            elif f.name.lower().endswith('.nd2'):
+                # Save temp file for processing
+                tmp_path = os.path.join("/tmp", f.name)
+                with open(tmp_path, "wb") as tmp_f:
+                    tmp_f.write(f.getbuffer())
+                results = process_nd2_file(tmp_path, index_start=index_counter)
+                all_results.extend(results)
+                index_counter += 1
+
+            else:
+                raise ValueError(f"Unsupported file type: {f.name}")
+
+        if all_results:
+            results_df = pd.DataFrame(all_results)
             excel_bytes = _to_excel_bytes(results_df)
             return results_df, excel_bytes, plt.gcf()
-        
-        else:
-            raise ValueError("Unsupported file type. Please upload .csv, .xlsx, or .nd2")
-    
+
+        raise ValueError("No valid files found.")
+
+    # Local usage: input_path provided
     elif input_path:
-        # Local mode: process a given folder path
-        area_list = process_images_in_folder(input_path)
-        results_df = pd.DataFrame(area_list)
-        excel_bytes = _to_excel_bytes(results_df)
-        return results_df, excel_bytes, plt.gcf()
-    
+        index_counter = 1
+        for file_path in glob.glob(os.path.join(input_path, "*.nd2")):
+            results = process_nd2_file(file_path, index_start=index_counter)
+            all_results.extend(results)
+            index_counter += 1
+
+        if all_results:
+            results_df = pd.DataFrame(all_results)
+            excel_bytes = _to_excel_bytes(results_df)
+            return results_df, excel_bytes, plt.gcf()
+        else:
+            raise ValueError("No ND2 files found in the provided folder.")
+
     else:
         raise ValueError("No input provided.")
