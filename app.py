@@ -4,12 +4,28 @@ import yaml
 from io import BytesIO
 import hashlib
 import os
+import sys
 
-# ---------- Safe import of scratch_analysis ----------
-try:
-    from scratch_analysis import run_analysis
-except ImportError:
-    st.error("Error: scratch_analysis module not found. Make sure scratch_analysis.py is in the same folder.")
+# ---------- Dynamic Import of scratch_analysis ----------
+scratch_module_found = False
+possible_paths = ['.', './src', './app']  # add more paths if needed
+
+for path in possible_paths:
+    sys.path.append(path)
+    try:
+        from scratch_analysis import run_analysis
+        scratch_module_found = True
+        break
+    except ImportError:
+        continue
+
+if not scratch_module_found:
+    st.error(
+        "Error: scratch_analysis module not found.\n"
+        "Make sure scratch_analysis.py is in the same folder or one of the subfolders.\n"
+        f"Checked paths: {possible_paths}\n"
+        f"Files in current folder: {os.listdir('.')}"
+    )
     st.stop()
 
 # ---------- Config & Auth Helpers ----------
