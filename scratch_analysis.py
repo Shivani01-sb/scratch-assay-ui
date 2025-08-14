@@ -9,7 +9,6 @@ from nd2reader import ND2Reader
 from PIL import Image
 import tifffile
 import os
-import pims
 
 def process_image_file(file, folder_name=""):
     """
@@ -18,39 +17,39 @@ def process_image_file(file, folder_name=""):
     """
     results = []
 
-    ext = os.path.splitext(file.name if hasattr(file, 'name') else str(file))[1].lower()
-
-    frames = []
-
     try:
+        ext = os.path.splitext(file.name if hasattr(file, 'name') else str(file))[1].lower()
+        frames = []
+
         if ext == ".nd2":
             with ND2Reader(file) as images:
                 frames = [np.asarray(frame) for frame in images]
         elif ext in [".tif", ".tiff"]:
             img = tifffile.imread(file)
-            if img.ndim == 3:  # multi-frame TIFF
-                frames = [img[i] for i in range(img.shape[0])]
-            else:
-                frames = [img]
+            frames = [img[i] for i in range(img.shape[0])] if img.ndim == 3 else [img]
         elif ext in [".jpg", ".jpeg", ".png", ".jp2"]:
             img = Image.open(file)
             frames = [np.array(img)]
         else:
-            print("Unsupported image type:", ext)
-            return results
+            return [{"File": file.name if hasattr(file, 'name') else str(file),
+                     "Error": f"Unsupported image type: {ext}"}]
+
+        from skimage.color import rgb2gray  # Import here to avoid unused import warnings
 
         for idx, img in enumerate(frames):
-            h, w = img.shape if img.ndim == 2 else img.shape[:2]
+            h, w = img.shape[:2]
 
             # Convert RGB to grayscale if needed
             if img.ndim == 3 and img.shape[2] in [3, 4]:
-                from skimage.color import rgb2gray
                 img = rgb2gray(img)
 
-            ent_img = entropy(img.astype(np.uint8), disk(5))
+            # Ensure image is uint8 for entropy calculation
+            img_uint8 = (img * 255).astype(np.uint8) if img.dtype != np.uint8 else img
+
+            ent_img = entropy(img_uint8, disk(5))
             thresh = threshold_otsu(ent_img)
             scratch_mask = ent_img < thresh
-            scratch_area_pix = np.sum(scratch_mask == 1)
+            scratch_area_pix = np.sum(scratch_mask)
             scratch_percentage = scratch_area_pix * 100.0 / (h * w)
 
             results.append({
@@ -61,10 +60,13 @@ def process_image_file(file, folder_name=""):
             })
 
     except Exception as e:
-        print("Error processing file:", file)
-        print("Error message:", e)
+        results.append({
+            "File": file.name if hasattr(file, 'name') else str(file),
+            "Error": str(e)
+        })
 
     return results
+
 
 def run_analysis(uploaded_files):
     """
@@ -72,8 +74,10 @@ def run_analysis(uploaded_files):
     uploaded_files: list of uploaded files (file-like objects)
     Returns: results_df, excel_bytes, chart_fig
     """
-    all_results = []
+    if not uploaded_files:
+        return pd.DataFrame(), None, None
 
+    all_results = []
     for f in uploaded_files:
         all_results.extend(process_image_file(f))
 
@@ -87,7 +91,7 @@ def run_analysis(uploaded_files):
 
     # Generate chart: Scratch area per frame
     chart_fig = None
-    if not results_df.empty:
+    if not results_df.empty and "Scratch Area (pix²)" in results_df.columns:
         chart_fig = plt.figure(figsize=(10, 5))
         for file_name, group in results_df.groupby("File"):
             plt.plot(group["Frame"], group["Scratch Area (pix²)"], marker='o', label=file_name)
