@@ -31,18 +31,19 @@ def login_ui(config):
     if login_clicked:
         if verify_password(username, password, config):
             st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            st.success("Login successful! Refreshing...")
-            st.experimental_rerun()
+            st.success("Login successful!")
+            return True  # Signal to rerun
         else:
             st.sidebar.error("Invalid credentials")
     st.sidebar.caption("Use credentials from config.yaml")
+    return False
 
 def logout_ui():
     if st.sidebar.button("Sign out"):
         st.session_state["auth"] = {"is_authenticated": False}
-        st.success("Logged out! Refreshing...")
-        st.experimental_rerun()
-
+        st.success("Logged out!")
+        return True
+    return False
 
 # ---------- App ----------
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
@@ -54,10 +55,14 @@ if "auth" not in st.session_state:
 
 # ---------- Authentication ----------
 if not st.session_state["auth"]["is_authenticated"]:
-    login_ui(config)
+    rerun_needed = login_ui(config)
+    if rerun_needed:
+        st.experimental_rerun()
 else:
     st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
-    logout_ui()
+    rerun_needed = logout_ui()
+    if rerun_needed:
+        st.experimental_rerun()
 
     st.markdown("""
     **Upload your files:** You can drag & drop or click to select CSV, Excel, or ZIP files.
