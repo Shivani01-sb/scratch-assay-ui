@@ -9,6 +9,7 @@ import os
 import matplotlib.pyplot as plt
 from skimage import color
 from scratch_analysis import run_analysis  # your existing analysis logic
+import numpy as np
 
 # ---------- Auth Helpers ----------
 def load_config():
@@ -62,6 +63,32 @@ def read_image(file):
     else:
         raise ValueError(f"Unsupported image type: {ext}")
 
+# ---------- Preprocess Files ----------
+def preprocess_file(f):
+    ext = os.path.splitext(getattr(f, 'name', f))[1].lower()
+    
+    if ext in [".csv", ".xlsx", ".zip"]:
+        return f  # leave as-is
+
+    img_data = read_image(f)
+    frames = []
+
+    # Multi-frame ND2 or TIFF
+    if hasattr(img_data, '__iter__') and not isinstance(img_data, np.ndarray):
+        for i, frame in enumerate(img_data):
+            if frame.ndim == 3 and frame.shape[2] in [3,4]:
+                frame = color.rgb2gray(frame)
+            frames.append(np.array(frame))
+    else:
+        # Single frame image
+        if isinstance(img_data, np.ndarray):
+            frame = img_data
+        else:
+            frame = np.array(img_data.convert('L'))  # PIL to grayscale
+        frames.append(frame)
+
+    return frames
+
 # ---------- Streamlit App ----------
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
 st.title("Scratch Assay Analysis — Streamlit")
@@ -101,15 +128,11 @@ else:
             st.stop()
 
         try:
-            # Convert image files to a consistent format
+            # Preprocess all files into consistent format
             files_for_analysis = []
             for f in uploaded:
-                ext = os.path.splitext(f.name)[1].lower()
-                if ext in [".csv", ".xlsx", ".zip"]:
-                    files_for_analysis.append(f)
-                else:
-                    img_data = read_image(f)
-                    files_for_analysis.append(img_data)
+                processed = preprocess_file(f)
+                files_for_analysis.append({"name": getattr(f, 'name', 'Image'), "frames": processed})
 
             # Run user analysis
             results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=files_for_analysis)
