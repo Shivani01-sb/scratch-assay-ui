@@ -2,13 +2,14 @@ import pandas as pd
 import numpy as np
 from io import BytesIO
 import matplotlib.pyplot as plt
-
-# Optional: if using image processing
-from skimage import io, filters, color
+from skimage import color
 
 def run_analysis(uploaded_files):
     """
-    uploaded_files: list of files or image iterables (from read_image)
+    uploaded_files: list of dicts or files processed in app.py
+        Each item can be:
+        - {"name": file_name, "frames": [np.ndarray, ...]} for images
+        - file-like CSV/XLSX/ZIP for data files
     Returns: results_df, excel_bytes, chart_fig
     """
 
@@ -16,39 +17,49 @@ def run_analysis(uploaded_files):
 
     for f in uploaded_files:
         try:
-            # Handle image iterables (ND2, multi-frame TIFF)
-            if hasattr(f, '__iter__') and not isinstance(f, (bytes, bytearray)):
-                for i, frame in enumerate(f):
-                    # Convert to grayscale if needed
-                    if frame.ndim == 3 and frame.shape[2] in [3, 4]:  # RGB/RGBA
+            # Image files
+            if isinstance(f, dict) and "frames" in f:
+                file_name = f.get("name", "ImageFile")
+                frames = f["frames"]
+                for i, frame in enumerate(frames):
+                    # Ensure grayscale
+                    if frame.ndim == 3 and frame.shape[2] in [3, 4]:
                         frame = color.rgb2gray(frame)
-
-                    # Simple analysis example: mean intensity
                     mean_val = np.mean(frame)
                     all_results.append({
-                        "file": getattr(f, 'filename', f"Image_{i}"),
+                        "file": file_name,
                         "frame": i + 1,
                         "mean_intensity": mean_val
                     })
-            # Handle CSV / Excel
+
+            # CSV/XLSX files
             elif isinstance(f, (bytes, bytearray)) or getattr(f, 'name', '').lower().endswith(('.csv', '.xlsx')):
-                if getattr(f, 'name', '').lower().endswith('.csv'):
+                file_name = getattr(f, 'name', 'DataFile')
+                if file_name.lower().endswith('.csv'):
                     df = pd.read_csv(f)
                 else:
                     df = pd.read_excel(f)
-                # Example: sum of first numeric column
                 numeric_cols = df.select_dtypes(include=np.number).columns
                 sum_val = df[numeric_cols[0]].sum() if len(numeric_cols) > 0 else np.nan
                 all_results.append({
-                    "file": getattr(f, 'name', 'DataFile'),
+                    "file": file_name,
                     "frame": np.nan,
                     "sum_first_numeric_col": sum_val
                 })
-            # Otherwise: skip unsupported
             else:
-                print(f"Skipping unsupported file: {getattr(f, 'name', f)}")
+                all_results.append({
+                    "file": getattr(f, 'name', str(f)),
+                    "frame": np.nan,
+                    "mean_intensity": np.nan
+                })
+
         except Exception as e:
             print(f"Error processing file {getattr(f, 'name', f)}: {e}")
+            all_results.append({
+                "file": getattr(f, 'name', str(f)),
+                "frame": np.nan,
+                "mean_intensity": np.nan
+            })
 
     # Convert to DataFrame
     results_df = pd.DataFrame(all_results)
@@ -58,15 +69,17 @@ def run_analysis(uploaded_files):
     results_df.to_excel(excel_buffer, index=False)
     excel_bytes = excel_buffer.getvalue()
 
-    # Optional chart
-    chart_fig = plt.figure(figsize=(8,4))
-    if 'mean_intensity' in results_df.columns:
-        plt.plot(results_df['frame'], results_df['mean_intensity'], marker='o')
+    # Optional chart for image frames
+    chart_fig = None
+    image_results = results_df.dropna(subset=['frame', 'mean_intensity'])
+    if not image_results.empty:
+        chart_fig = plt.figure(figsize=(8, 4))
+        for file_name, group in image_results.groupby('file'):
+            plt.plot(group['frame'], group['mean_intensity'], marker='o', label=file_name)
         plt.title("Mean Intensity per Frame")
         plt.xlabel("Frame")
         plt.ylabel("Mean Intensity")
+        plt.legend()
         plt.tight_layout()
-    else:
-        chart_fig = None
 
     return results_df, excel_bytes, chart_fig
