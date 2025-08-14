@@ -1,148 +1,72 @@
 import pandas as pd
-import matplotlib.pyplot as plt
-from io import BytesIO
-import os
-import glob
 import numpy as np
-import tempfile
-import zipfile
-from skimage.filters.rank import entropy
-from skimage.morphology import disk
-from skimage.filters import threshold_otsu
-from nd2reader import ND2Reader
+from io import BytesIO
+import matplotlib.pyplot as plt
 
+# Optional: if using image processing
+from skimage import io, filters, color
 
-def _to_excel_bytes(df: pd.DataFrame) -> bytes:
-    """Convert DataFrame to Excel bytes for download."""
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Results")
-    buf.seek(0)
-    return buf.getvalue()
-
-
-def process_nd2_file(file_path, index_start=1, folder_name=""):
-    """Process a single ND2 file and return area results."""
-    area_list = []
-    try:
-        with ND2Reader(file_path) as images:
-            img = np.asarray(images[0])  # First image
-
-        h, w = img.shape
-        entropy_filtered_image = entropy(img, disk(5))
-        threshold = threshold_otsu(entropy_filtered_image)
-        Scratch = entropy_filtered_image < threshold
-
-        plt.subplot(3, 3, index_start)
-        plt.imshow(Scratch, cmap='gray')
-
-        area = np.sum(Scratch == 1) * 100.0 / (h * w)
-        binary = entropy_filtered_image <= threshold
-        scratch_area = np.sum(binary == 1)
-
-        area_list.append({
-            'Sr. No.': index_start,
-            'Name': f"{folder_name}_{os.path.basename(file_path)}",
-            'Scratch Area': scratch_area,
-            'Percentage': area
-        })
-
-    except Exception as e:
-        print("Error processing file:", file_path)
-        print("Error message:", str(e))
-    
-    return area_list
-
-
-def extract_zip(file, tmpdir):
-    """Extract ZIP file and return list of extracted file paths."""
-    extracted_files = []
-    file_path = os.path.join(tmpdir, file.name)
-    with open(file_path, "wb") as f_out:
-        f_out.write(file.getbuffer())
-
-    with zipfile.ZipFile(file_path, 'r') as zip_ref:
-        zip_ref.extractall(tmpdir)
-
-    for root, _, files in os.walk(tmpdir):
-        for fname in files:
-            extracted_files.append(os.path.join(root, fname))
-    return extracted_files
-
-
-def run_analysis(input_path=None, uploaded_files=None):
+def run_analysis(uploaded_files):
     """
-    Process uploaded files or a local folder.
+    uploaded_files: list of files or image iterables (from read_image)
     Returns: results_df, excel_bytes, chart_fig
     """
+
     all_results = []
 
-    if uploaded_files:
-        index_counter = 1
-        tmpdir = tempfile.mkdtemp()
+    for f in uploaded_files:
+        try:
+            # Handle image iterables (ND2, multi-frame TIFF)
+            if hasattr(f, '__iter__') and not isinstance(f, (bytes, bytearray)):
+                for i, frame in enumerate(f):
+                    # Convert to grayscale if needed
+                    if frame.ndim == 3 and frame.shape[2] in [3, 4]:  # RGB/RGBA
+                        frame = color.rgb2gray(frame)
 
-        for f in uploaded_files:
-            # Handle ZIP archives
-            if f.name.lower().endswith(".zip"):
-                extracted_paths = extract_zip(f, tmpdir)
-                for p in extracted_paths:
-                    if p.lower().endswith(".nd2"):
-                        results = process_nd2_file(p, index_start=index_counter)
-                        all_results.extend(results)
-                        index_counter += 1
-                    elif p.lower().endswith('.csv'):
-                        df = pd.read_csv(p)
-                        excel_bytes = _to_excel_bytes(df)
-                        return df, excel_bytes, None
-                    elif p.lower().endswith(('.xls', '.xlsx')):
-                        df = pd.read_excel(p)
-                        excel_bytes = _to_excel_bytes(df)
-                        return df, excel_bytes, None
-
-            # Handle single CSV
-            elif f.name.lower().endswith('.csv'):
-                df = pd.read_csv(f)
-                excel_bytes = _to_excel_bytes(df)
-                return df, excel_bytes, None
-
-            # Handle single Excel
-            elif f.name.lower().endswith(('.xls', '.xlsx')):
-                df = pd.read_excel(f)
-                excel_bytes = _to_excel_bytes(df)
-                return df, excel_bytes, None
-
-            # Handle single ND2
-            elif f.name.lower().endswith('.nd2'):
-                tmp_path = os.path.join(tmpdir, f.name)
-                with open(tmp_path, "wb") as tmp_f:
-                    tmp_f.write(f.getbuffer())
-                results = process_nd2_file(tmp_path, index_start=index_counter)
-                all_results.extend(results)
-                index_counter += 1
-
+                    # Simple analysis example: mean intensity
+                    mean_val = np.mean(frame)
+                    all_results.append({
+                        "file": getattr(f, 'filename', f"Image_{i}"),
+                        "frame": i + 1,
+                        "mean_intensity": mean_val
+                    })
+            # Handle CSV / Excel
+            elif isinstance(f, (bytes, bytearray)) or getattr(f, 'name', '').lower().endswith(('.csv', '.xlsx')):
+                if getattr(f, 'name', '').lower().endswith('.csv'):
+                    df = pd.read_csv(f)
+                else:
+                    df = pd.read_excel(f)
+                # Example: sum of first numeric column
+                numeric_cols = df.select_dtypes(include=np.number).columns
+                sum_val = df[numeric_cols[0]].sum() if len(numeric_cols) > 0 else np.nan
+                all_results.append({
+                    "file": getattr(f, 'name', 'DataFile'),
+                    "frame": np.nan,
+                    "sum_first_numeric_col": sum_val
+                })
+            # Otherwise: skip unsupported
             else:
-                raise ValueError(f"Unsupported file type: {f.name}")
+                print(f"Skipping unsupported file: {getattr(f, 'name', f)}")
+        except Exception as e:
+            print(f"Error processing file {getattr(f, 'name', f)}: {e}")
 
-        if all_results:
-            results_df = pd.DataFrame(all_results)
-            excel_bytes = _to_excel_bytes(results_df)
-            return results_df, excel_bytes, plt.gcf()
+    # Convert to DataFrame
+    results_df = pd.DataFrame(all_results)
 
-        raise ValueError("No valid files found.")
+    # Prepare Excel bytes
+    excel_buffer = BytesIO()
+    results_df.to_excel(excel_buffer, index=False)
+    excel_bytes = excel_buffer.getvalue()
 
-    elif input_path:
-        index_counter = 1
-        for file_path in glob.glob(os.path.join(input_path, "*.nd2")):
-            results = process_nd2_file(file_path, index_start=index_counter)
-            all_results.extend(results)
-            index_counter += 1
-
-        if all_results:
-            results_df = pd.DataFrame(all_results)
-            excel_bytes = _to_excel_bytes(results_df)
-            return results_df, excel_bytes, plt.gcf()
-        else:
-            raise ValueError("No ND2 files found in the provided folder.")
-
+    # Optional chart
+    chart_fig = plt.figure(figsize=(8,4))
+    if 'mean_intensity' in results_df.columns:
+        plt.plot(results_df['frame'], results_df['mean_intensity'], marker='o')
+        plt.title("Mean Intensity per Frame")
+        plt.xlabel("Frame")
+        plt.ylabel("Mean Intensity")
+        plt.tight_layout()
     else:
-        raise ValueError("No input provided.")
+        chart_fig = None
+
+    return results_df, excel_bytes, chart_fig
