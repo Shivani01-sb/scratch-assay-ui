@@ -11,49 +11,18 @@ import os
 import tempfile
 import zipfile
 from skimage.color import rgb2gray
-import imghdr
-
-# ---------- Helper: detect file type ----------
-def detect_file_type(file):
-    """
-    Determine the file type of a Streamlit UploadedFile or BytesIO object.
-    Returns extension: .jpg, .png, .jp2, .nd2, .zip, or None if unknown.
-    """
-    filename = getattr(file, "name", "")
-    ext = os.path.splitext(filename)[1].lower()
-
-    # Known extensions
-    if ext in [".jpg", ".jpeg", ".png", ".jp2", ".nd2", ".zip"]:
-        return ext
-
-    # Try detecting image type from content
-    try:
-        if hasattr(file, "read"):
-            pos = file.tell()
-            header_bytes = file.read(32)
-            file.seek(pos)
-            img_type = imghdr.what(None, h=header_bytes)
-            if img_type == "jpeg":
-                return ".jpg"
-            elif img_type == "png":
-                return ".png"
-            # Add JP2 detection if needed
-    except:
-        pass
-
-    return None
 
 # ---------- Process a single image file ----------
 def process_image_file(file, folder_name=""):
     results = []
     try:
         filename = getattr(file, "name", "uploaded_file")
-        ext = detect_file_type(file)
+        ext = os.path.splitext(filename)[1].lower()
 
-        if ext is None:
-            return [{"File": filename, "Error": "Unsupported image type"}]
+        if ext not in [".jpg", ".jpeg", ".png", ".jp2", ".nd2", ".zip"]:
+            return [{"File": filename, "Error": f"Unsupported image type: {ext}"}]
 
-        # Save to temporary file if needed
+        # Save to temporary file
         temp_path = None
         if hasattr(file, "getbuffer"):
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
@@ -124,12 +93,6 @@ def process_image_file(file, folder_name=""):
 
 # ---------- Main function for Streamlit ----------
 def run_analysis(uploaded_file_bytes_list):
-    """
-    Processes a list of uploaded files (JPG, JP2, ND2, ZIP) and returns:
-    - results_df: pandas DataFrame
-    - excel_bytes: Excel file in bytes
-    - chart_fig: matplotlib figure
-    """
     all_results = []
 
     for f in uploaded_file_bytes_list:
