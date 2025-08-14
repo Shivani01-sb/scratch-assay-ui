@@ -5,4 +5,3 @@ auth:
   users:
     - username: "admin"
       password_sha256: "f5767a0cb8e642e4d86857f930b50ba27a71afb86dbfb25a09bfdf846407ccd6"
-
