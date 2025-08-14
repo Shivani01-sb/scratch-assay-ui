@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import yaml
@@ -56,17 +55,25 @@ else:
     st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
     logout_ui()
 
-st.markdown("""Upload your files (CSV/Excel) or a .zip of a folder. 
-Your existing processing logic should live in `scratch_analysis.py::run_analysis`."
+st.markdown("""
+**Upload your files:** You can drag & drop or click to select CSV, Excel, or ZIP files.
+Your existing processing logic should live in `scratch_analysis.py::run_analysis`.
 """)
 
-uploaded = st.file_uploader("Upload one or more files (CSV, XLSX, or ZIP)", accept_multiple_files=True)
+# ---------- File Uploader ----------
+uploaded = st.file_uploader(
+    "Upload one or more files (CSV, XLSX, ZIP)",
+    type=["csv", "xlsx", "zip"],
+    accept_multiple_files=True,
+    help="Drag files here or click to browse"
+)
 
 # Optional parameters / switches
 with st.expander("Options"):
     show_chart = st.checkbox("Show chart", value=True)
     show_table = st.checkbox("Show result table", value=True)
 
+# ---------- Run Analysis ----------
 if st.button("Run Analysis", type="primary"):
     if not uploaded:
         st.warning("Please upload at least one file.")
