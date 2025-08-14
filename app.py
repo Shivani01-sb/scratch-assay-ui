@@ -23,49 +23,46 @@ def verify_password(username, password, config):
             return True
     return False
 
-def login_ui(config):
-    st.sidebar.subheader("Login")
-    username = st.sidebar.text_input("Username")
-    password = st.sidebar.text_input("Password", type="password")
-    login_clicked = st.sidebar.button("Sign in")
-    
-    if login_clicked:
-        if verify_password(username, password, config):
-            st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            return True  # Signal to rerun
-        else:
-            st.sidebar.error("Invalid credentials")
-    st.sidebar.caption("Use credentials from config.yaml")
-    return False
-
-def logout_ui():
-    if st.sidebar.button("Sign out"):
-        st.session_state["auth"] = {"is_authenticated": False}
-        return True
-    return False
+# ---------- Initialize session state ----------
+if "auth" not in st.session_state:
+    st.session_state["auth"] = {"is_authenticated": False, "username": ""}
+if "login_attempt" not in st.session_state:
+    st.session_state["login_attempt"] = False
+if "logout_attempt" not in st.session_state:
+    st.session_state["logout_attempt"] = False
 
 # ---------- App ----------
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
 st.title("Scratch Assay Analysis — Streamlit")
 
-# ---------- Session State ----------
-if "auth" not in st.session_state:
-    st.session_state["auth"] = {"is_authenticated": False}
-
 config = load_config()
 
-# ---------- Authentication ----------
-if not st.session_state["auth"]["is_authenticated"]:
-    rerun_needed = login_ui(config)
-    if rerun_needed:
-        st.experimental_rerun()  # Rerun safely without any UI output
-else:
-    # Show login success after rerun
-    st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
-    st.success("Login successful!")
+# ---------- Sidebar: Login ----------
+st.sidebar.subheader("Authentication")
 
-    if logout_ui():
-        st.experimental_rerun()
+if not st.session_state["auth"]["is_authenticated"]:
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+    if st.sidebar.button("Sign in"):
+        st.session_state["login_attempt"] = True
+        if verify_password(username, password, config):
+            st.session_state["auth"] = {"is_authenticated": True, "username": username}
+            st.session_state["login_attempt"] = False
+        else:
+            st.sidebar.error("Invalid credentials")
+            st.session_state["login_attempt"] = False
+    st.sidebar.caption("Use credentials from config.yaml")
+
+# ---------- Sidebar: Logout ----------
+if st.session_state["auth"]["is_authenticated"]:
+    st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
+    if st.sidebar.button("Sign out"):
+        st.session_state["auth"] = {"is_authenticated": False, "username": ""}
+        st.session_state["logout_attempt"] = True
+
+# ---------- Main App: After Login ----------
+if st.session_state["auth"]["is_authenticated"]:
+    st.success("Login successful!")
 
     st.markdown("""
     **Upload your files:** You can drag & drop or click to select CSV, Excel, or ZIP files.
@@ -76,7 +73,6 @@ else:
         "Upload one or more files (CSV, XLSX, ZIP)",
         type=["csv", "xlsx", "zip"],
         accept_multiple_files=True,
-        help="Drag files here or click to browse",
         key="uploader"
     )
 
@@ -86,44 +82,44 @@ else:
         show_table = st.checkbox("Show result table", value=True)
 
     # ---------- Run Analysis ----------
-    run_clicked = st.button("Run Analysis")
-    if run_clicked:
+    if st.button("Run Analysis"):
         if not uploaded_files:
             st.warning("Please upload at least one file before running analysis.")
-            st.stop()
-        
-        try:
-            results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=uploaded_files)
+        else:
+            try:
+                results_df, excel_bytes, chart_fig = run_analysis(uploaded_files)
 
-            if show_table and isinstance(results_df, pd.DataFrame):
-                st.subheader("Results")
-                st.dataframe(results_df, use_container_width=True)
+                # Display Results Table
+                if show_table and isinstance(results_df, pd.DataFrame):
+                    st.subheader("Results")
+                    st.dataframe(results_df, use_container_width=True)
 
-            if show_chart and chart_fig is not None:
-                st.subheader("Chart")
-                st.pyplot(chart_fig, clear_figure=False)
+                # Display Chart
+                if show_chart and chart_fig is not None:
+                    st.subheader("Chart")
+                    st.pyplot(chart_fig, clear_figure=False)
 
-            # ---------- Downloads ----------
-            if isinstance(excel_bytes, (bytes, bytearray)):
-                st.download_button(
-                    "Download Excel Results",
-                    data=excel_bytes,
-                    file_name="results.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+                # ---------- Downloads ----------
+                if isinstance(excel_bytes, (bytes, bytearray)):
+                    st.download_button(
+                        "Download Excel Results",
+                        data=excel_bytes,
+                        file_name="results.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
 
-            if chart_fig is not None:
-                buf = BytesIO()
-                chart_fig.savefig(buf, format="png", bbox_inches="tight")
-                st.download_button(
-                    "Download Chart (PNG)",
-                    data=buf.getvalue(),
-                    file_name="chart.png",
-                    mime="image/png",
-                )
+                if chart_fig is not None:
+                    buf = BytesIO()
+                    chart_fig.savefig(buf, format="png", bbox_inches="tight")
+                    st.download_button(
+                        "Download Chart (PNG)",
+                        data=buf.getvalue(),
+                        file_name="chart.png",
+                        mime="image/png",
+                    )
 
-            st.success("Analysis completed successfully!")
+                st.success("Analysis completed successfully!")
 
-        except Exception as e:
-            st.error(f"Error during analysis: {e}")
-            st.exception(e)
+            except Exception as e:
+                st.error(f"Error during analysis: {e}")
+                st.exception(e)
