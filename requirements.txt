@@ -5,3 +5,5 @@ matplotlib>=3.8
 pyyaml>=6.0
 scikit-image>=0.22
 nd2reader>=3.3
+rarfile>=4.0
+
