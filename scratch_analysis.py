@@ -7,13 +7,12 @@ from skimage.morphology import disk
 from skimage.filters import threshold_otsu
 from nd2reader import ND2Reader
 from PIL import Image
-import tifffile
 import os
 import tempfile
 
 def process_image_file(file, folder_name=""):
     """
-    Process a single uploaded image file (ND2, TIFF, JPG, JP2) and calculate scratch area.
+    Process a single uploaded image file (ND2, JPG, JP2, PNG) and calculate scratch area.
     Works with Streamlit's uploaded BytesIO files.
     Returns a list of dicts with results.
     """
@@ -39,9 +38,6 @@ def process_image_file(file, folder_name=""):
         if ext == ".nd2":
             with ND2Reader(temp_path) as images:
                 frames = [np.asarray(frame) for frame in images]
-        elif ext in [".tif", ".tiff"]:
-            img = tifffile.imread(temp_path)
-            frames = [img[i] for i in range(img.shape[0])] if img.ndim == 3 else [img]
         elif ext in [".jpg", ".jpeg", ".png", ".jp2"]:
             img = Image.open(temp_path)
             frames = [np.array(img)]
