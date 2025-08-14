@@ -95,82 +95,88 @@ config = load_config()
 if "auth" not in st.session_state:
     st.session_state["auth"] = {"is_authenticated": False}
 
-if not st.session_state["auth"]["is_authenticated"]:
-    login_ui(config)
-else:
+login_ui(config)
+
+if st.session_state["auth"]["is_authenticated"]:
     st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
     logout_ui()
+else:
+    st.info("Please log in to enable file upload and analysis.")
 
-    st.markdown("""
-    **Upload your files:** Drag & drop or click to select files.  
-    Supported types: CSV, XLSX, ZIP, TIFF, JP2, ND2, JPG/JPEG.
-    """)
+st.markdown("""
+**Upload your files:** Drag & drop or click to select files.  
+Supported types: CSV, XLSX, ZIP, TIFF, JP2, ND2, JPG/JPEG.
+""")
 
-    # ---------- File Uploader ----------
-    uploaded = st.file_uploader(
-        "Upload one or more files",
-        type=["csv", "xlsx", "zip", "tif", "tiff", "jp2", "nd2", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        help="Drag files here or click to browse"
-    )
+# ---------- File Uploader ----------
+uploaded = st.file_uploader(
+    "Upload one or more files",
+    type=["csv", "xlsx", "zip", "tif", "tiff", "jp2", "nd2", "jpg", "jpeg"],
+    accept_multiple_files=True,
+    help="Drag files here or click to browse",
+    disabled=not st.session_state["auth"]["is_authenticated"]
+)
 
-    # Optional parameters
-    with st.expander("Options"):
-        show_chart = st.checkbox("Show chart", value=True)
-        show_table = st.checkbox("Show result table", value=True)
+# Optional parameters
+with st.expander("Options"):
+    show_chart = st.checkbox("Show chart", value=True)
+    show_table = st.checkbox("Show result table", value=True)
 
-    # ---------- Run Analysis ----------
-    if st.button("Run Analysis", type="primary"):
-        if not uploaded:
-            st.warning("Please upload at least one file.")
-            st.stop()
+# ---------- Run Analysis ----------
+if st.button("Run Analysis", type="primary"):
+    if not st.session_state["auth"]["is_authenticated"]:
+        st.warning("Please log in to run analysis.")
+        st.stop()
+    if not uploaded:
+        st.warning("Please upload at least one file.")
+        st.stop()
 
-        try:
-            # Preprocess all files into consistent format
-            files_for_analysis = []
-            for f in uploaded:
-                processed = preprocess_file(f)
-                files_for_analysis.append({"name": getattr(f, 'name', 'Image'), "frames": processed})
+    try:
+        # Preprocess all files into consistent format
+        files_for_analysis = []
+        for f in uploaded:
+            processed = preprocess_file(f)
+            files_for_analysis.append({"name": getattr(f, 'name', 'Image'), "frames": processed})
 
-            # Run user analysis
-            results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=files_for_analysis)
+        # Run user analysis
+        results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=files_for_analysis)
 
-            # Store results in session_state for persistence
-            st.session_state["results_df"] = results_df
-            st.session_state["excel_bytes"] = excel_bytes
-            st.session_state["chart_fig"] = chart_fig
+        # Store results in session_state for persistence
+        st.session_state["results_df"] = results_df
+        st.session_state["excel_bytes"] = excel_bytes
+        st.session_state["chart_fig"] = chart_fig
 
-            st.success("Analysis completed and stored in session.")
+        st.success("Analysis completed and stored in session.")
 
-        except Exception as e:
-            st.error(f"Error during analysis: {e}")
-            st.exception(e)
+    except Exception as e:
+        st.error(f"Error during analysis: {e}")
+        st.exception(e)
 
-    # ---------- Display persistent results ----------
-    if "results_df" in st.session_state:
-        if show_table and isinstance(st.session_state["results_df"], pd.DataFrame):
-            st.subheader("Results")
-            st.dataframe(st.session_state["results_df"], use_container_width=True)
+# ---------- Display persistent results ----------
+if "results_df" in st.session_state:
+    if show_table and isinstance(st.session_state["results_df"], pd.DataFrame):
+        st.subheader("Results")
+        st.dataframe(st.session_state["results_df"], use_container_width=True)
 
-        if show_chart and st.session_state.get("chart_fig") is not None:
-            st.subheader("Chart")
-            st.pyplot(st.session_state["chart_fig"], clear_figure=False)
+    if show_chart and st.session_state.get("chart_fig") is not None:
+        st.subheader("Chart")
+        st.pyplot(st.session_state["chart_fig"], clear_figure=False)
 
-        # Download buttons
-        if st.session_state.get("excel_bytes") is not None:
-            st.download_button(
-                "Download Excel Results",
-                data=st.session_state["excel_bytes"],
-                file_name="results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+    # Download buttons
+    if st.session_state.get("excel_bytes") is not None:
+        st.download_button(
+            "Download Excel Results",
+            data=st.session_state["excel_bytes"],
+            file_name="results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
-        if st.session_state.get("chart_fig") is not None:
-            buf = BytesIO()
-            st.session_state["chart_fig"].savefig(buf, format="png", bbox_inches="tight")
-            st.download_button(
-                "Download Chart (PNG)",
-                data=buf.getvalue(),
-                file_name="chart.png",
-                mime="image/png",
-            )
+    if st.session_state.get("chart_fig") is not None:
+        buf = BytesIO()
+        st.session_state["chart_fig"].savefig(buf, format="png", bbox_inches="tight")
+        st.download_button(
+            "Download Chart (PNG)",
+            data=buf.getvalue(),
+            file_name="chart.png",
+            mime="image/png",
+        )
