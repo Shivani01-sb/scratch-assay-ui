@@ -37,8 +37,7 @@ def login_ui(config):
     if st.sidebar.button("Sign in"):
         if verify_password(username, password, config):
             st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            st.success("Login successful. Please refresh the page to continue.")
-            st.stop()
+            st.sidebar.success(f"Welcome {username}!")
         else:
             st.sidebar.error("Invalid credentials")
     st.sidebar.caption("Use credentials from config.yaml")
@@ -46,8 +45,7 @@ def login_ui(config):
 def logout_ui():
     if st.sidebar.button("Sign out"):
         st.session_state["auth"] = {"is_authenticated": False}
-        st.success("Logged out. Please refresh the page to continue.")
-        st.stop()
+        st.sidebar.info("Logged out successfully")
 
 # ---------- Image Reader ----------
 def read_image(file):
@@ -75,7 +73,7 @@ def preprocess_file(f):
 
     # Multi-frame ND2 or TIFF
     if hasattr(img_data, '__iter__') and not isinstance(img_data, np.ndarray):
-        for i, frame in enumerate(img_data):
+        for frame in img_data:
             if frame.ndim == 3 and frame.shape[2] in [3,4]:
                 frame = color.rgb2gray(frame)
             frames.append(np.array(frame))
