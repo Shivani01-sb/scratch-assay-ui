@@ -1,72 +1,115 @@
+import streamlit as st
 import pandas as pd
-import numpy as np
+import yaml
 from io import BytesIO
 import matplotlib.pyplot as plt
+from scratch_analysis import run_analysis
 
-# Optional: if using image processing
-from skimage import io, filters, color
+# ---------- Auth Helpers ----------
+def load_config():
+    try:
+        with open("config.yaml", "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        return {}
 
-def run_analysis(uploaded_files):
-    """
-    uploaded_files: list of files or image iterables (from read_image)
-    Returns: results_df, excel_bytes, chart_fig
-    """
+def verify_password(username, password, config):
+    auth = config.get("auth", {})
+    users = auth.get("users", [])
+    salt = auth.get("salt", "")
+    import hashlib
+    pw_hash = hashlib.sha256((password + salt).encode()).hexdigest()
+    for u in users:
+        if u.get("username") == username and u.get("password_sha256") == pw_hash:
+            return True
+    return False
 
-    all_results = []
+def login_ui(config):
+    st.sidebar.subheader("Login")
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+    if st.sidebar.button("Sign in"):
+        if verify_password(username, password, config):
+            st.session_state["auth"] = {"is_authenticated": True, "username": username}
+            st.experimental_rerun()  # <-- force reload to show uploader
+        else:
+            st.sidebar.error("Invalid credentials")
+    st.sidebar.caption("Use credentials from config.yaml")
 
-    for f in uploaded_files:
+def logout_ui():
+    if st.sidebar.button("Sign out"):
+        st.session_state["auth"] = {"is_authenticated": False}
+        st.experimental_rerun()  # <-- force reload after logout
+
+# ---------- App ----------
+st.set_page_config(page_title="Scratch Assay UI", layout="wide")
+st.title("Scratch Assay Analysis — Streamlit")
+
+config = load_config()
+if "auth" not in st.session_state:
+    st.session_state["auth"] = {"is_authenticated": False}
+
+if not st.session_state["auth"]["is_authenticated"]:
+    login_ui(config)
+else:
+    st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
+    logout_ui()
+
+    st.markdown("""
+    **Upload your files:** You can drag & drop or click to select CSV, Excel, or ZIP files.
+    Your existing processing logic should live in `scratch_analysis.py::run_analysis`.
+    """)
+
+    # ---------- File Uploader ----------
+    uploaded = st.file_uploader(
+        "Upload one or more files (CSV, XLSX, ZIP)",
+        type=["csv", "xlsx", "zip"],
+        accept_multiple_files=True,
+        help="Drag files here or click to browse"
+    )
+
+    # Optional parameters / switches
+    with st.expander("Options"):
+        show_chart = st.checkbox("Show chart", value=True)
+        show_table = st.checkbox("Show result table", value=True)
+
+    # ---------- Run Analysis ----------
+    if st.button("Run Analysis", type="primary"):
+        if not uploaded:
+            st.warning("Please upload at least one file.")
+            st.stop()
+
         try:
-            # Handle image iterables (ND2, multi-frame TIFF)
-            if hasattr(f, '__iter__') and not isinstance(f, (bytes, bytearray)):
-                for i, frame in enumerate(f):
-                    # Convert to grayscale if needed
-                    if frame.ndim == 3 and frame.shape[2] in [3, 4]:  # RGB/RGBA
-                        frame = color.rgb2gray(frame)
+            results_df, excel_bytes, chart_fig = run_analysis(uploaded_files=uploaded)
 
-                    # Simple analysis example: mean intensity
-                    mean_val = np.mean(frame)
-                    all_results.append({
-                        "file": getattr(f, 'filename', f"Image_{i}"),
-                        "frame": i + 1,
-                        "mean_intensity": mean_val
-                    })
-            # Handle CSV / Excel
-            elif isinstance(f, (bytes, bytearray)) or getattr(f, 'name', '').lower().endswith(('.csv', '.xlsx')):
-                if getattr(f, 'name', '').lower().endswith('.csv'):
-                    df = pd.read_csv(f)
-                else:
-                    df = pd.read_excel(f)
-                # Example: sum of first numeric column
-                numeric_cols = df.select_dtypes(include=np.number).columns
-                sum_val = df[numeric_cols[0]].sum() if len(numeric_cols) > 0 else np.nan
-                all_results.append({
-                    "file": getattr(f, 'name', 'DataFile'),
-                    "frame": np.nan,
-                    "sum_first_numeric_col": sum_val
-                })
-            # Otherwise: skip unsupported
-            else:
-                print(f"Skipping unsupported file: {getattr(f, 'name', f)}")
+            if show_table and isinstance(results_df, pd.DataFrame):
+                st.subheader("Results")
+                st.dataframe(results_df, use_container_width=True)
+
+            if show_chart and chart_fig is not None:
+                st.subheader("Chart")
+                st.pyplot(chart_fig, clear_figure=False)
+
+            # Downloads
+            if isinstance(excel_bytes, (bytes, bytearray)):
+                st.download_button(
+                    "Download Excel Results",
+                    data=excel_bytes,
+                    file_name="results.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+            if chart_fig is not None:
+                buf = BytesIO()
+                chart_fig.savefig(buf, format="png", bbox_inches="tight")
+                st.download_button(
+                    "Download Chart (PNG)",
+                    data=buf.getvalue(),
+                    file_name="chart.png",
+                    mime="image/png",
+                )
+
+            st.success("Analysis completed.")
         except Exception as e:
-            print(f"Error processing file {getattr(f, 'name', f)}: {e}")
-
-    # Convert to DataFrame
-    results_df = pd.DataFrame(all_results)
-
-    # Prepare Excel bytes
-    excel_buffer = BytesIO()
-    results_df.to_excel(excel_buffer, index=False)
-    excel_bytes = excel_buffer.getvalue()
-
-    # Optional chart
-    chart_fig = plt.figure(figsize=(8,4))
-    if 'mean_intensity' in results_df.columns:
-        plt.plot(results_df['frame'], results_df['mean_intensity'], marker='o')
-        plt.title("Mean Intensity per Frame")
-        plt.xlabel("Frame")
-        plt.ylabel("Mean Intensity")
-        plt.tight_layout()
-    else:
-        chart_fig = None
-
-    return results_df, excel_bytes, chart_fig
+            st.error(f"Error during analysis: {e}")
+            st.exception(e)
