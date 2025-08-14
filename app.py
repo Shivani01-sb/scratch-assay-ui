@@ -28,10 +28,10 @@ def login_ui(config):
     username = st.sidebar.text_input("Username")
     password = st.sidebar.text_input("Password", type="password")
     login_clicked = st.sidebar.button("Sign in")
+    
     if login_clicked:
         if verify_password(username, password, config):
             st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            st.success("Login successful!")
             return True  # Signal to rerun
         else:
             st.sidebar.error("Invalid credentials")
@@ -41,7 +41,6 @@ def login_ui(config):
 def logout_ui():
     if st.sidebar.button("Sign out"):
         st.session_state["auth"] = {"is_authenticated": False}
-        st.success("Logged out!")
         return True
     return False
 
@@ -49,19 +48,23 @@ def logout_ui():
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
 st.title("Scratch Assay Analysis — Streamlit")
 
-config = load_config()
+# ---------- Session State ----------
 if "auth" not in st.session_state:
     st.session_state["auth"] = {"is_authenticated": False}
+
+config = load_config()
 
 # ---------- Authentication ----------
 if not st.session_state["auth"]["is_authenticated"]:
     rerun_needed = login_ui(config)
     if rerun_needed:
-        st.experimental_rerun()
+        st.experimental_rerun()  # Rerun safely without any UI output
 else:
+    # Show login success after rerun
     st.sidebar.success(f"Logged in as {st.session_state['auth']['username']}")
-    rerun_needed = logout_ui()
-    if rerun_needed:
+    st.success("Login successful!")
+
+    if logout_ui():
         st.experimental_rerun()
 
     st.markdown("""
