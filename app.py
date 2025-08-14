@@ -31,7 +31,8 @@ def login_ui(config):
     if st.sidebar.button("Sign in"):
         if verify_password(username, password, config):
             st.session_state["auth"] = {"is_authenticated": True, "username": username}
-            st.experimental_rerun()  # <-- force reload to show uploader
+            st.success("Login successful. Please refresh the page to continue.")
+            st.stop()
         else:
             st.sidebar.error("Invalid credentials")
     st.sidebar.caption("Use credentials from config.yaml")
@@ -39,7 +40,8 @@ def login_ui(config):
 def logout_ui():
     if st.sidebar.button("Sign out"):
         st.session_state["auth"] = {"is_authenticated": False}
-        st.experimental_rerun()  # <-- force reload after logout
+        st.success("Logged out. Please refresh the page to continue.")
+        st.stop()
 
 # ---------- App ----------
 st.set_page_config(page_title="Scratch Assay UI", layout="wide")
